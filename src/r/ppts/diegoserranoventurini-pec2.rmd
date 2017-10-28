@@ -1,0 +1,419 @@
+---
+title: "PEC 2 - mineria de datos"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: 2
+  word_document:
+    toc: yes
+    toc_depth: '2'
+  html_document:
+    df_print: paged
+    css : ds.css
+    toc: yes
+    toc_depth: '2'
+---
+
+
+# Prueba de evaluación contínua 2 - minería de datos (I)
+
+```{r setup, echo=TRUE, warning=FALSE}
+#carga de paquetes
+packs <- c('readxl', 'tidyverse', 'stringr', 'RColorBrewer', 'viridis', 'GGally', 'arules', 'CORElearn')
+suppressWarnings(suppressMessages(sapply(packs, require, character.only=TRUE)))
+
+#ruta a los datos:
+datapath <- '../data/'
+
+#carga de los datos
+countries <- read_excel(paste0(datapath, 'countries.xlsx'), col_names = TRUE) %>% 
+  mutate(NAME=NAME %>% as.factor)
+
+```
+
+## Pregunta 1:
+
+*Supongamos que estás trabajando en la fase de preparación de datos del proyecto que has propuesto en la PEC 1. Haz una propuesta teórica de que harías, que problemas te podrías encontrar y cómo los afrontarías.*
+
+Por recapitular, el proyecto que se propuso en la PEC 1 versaba sobre la extracción de conocimiento acerca del rendimiento de programas de apoyo a la jóvenes entre 8-16.
+
+Partimos de que hemos recogido de todas las fuentes necesarias la información, y disponemos de ella en varios ficheros .xslx con una estructura definida (y diferente) para cada una de las fuentes. Durante la fase de preparación de los datos será necesario:
+
+* Analizar la estructura de los ficheros de cada fuente. 
+* Analizar cada uno de los ficheros de cada fuente intentando extraer una primera intuición de la información que contienen.
+* Buscar posibles discrepancias entre los ficheros.
+
+Para ello, construiremos un script por fuente que lea cada uno de los ficheros; analice la estructura en busca de diferencias frente a la definida; extraiga un primer análisis univariable de las columnas que existan en cada fichero.
+
+Con esta información disponible buscaremos posibles errores en las fuentes. Un problema probable sea que se hayan rellenados los formularios de inconsistentemente, y si un campo requería un sí o un no, nos encontremos con sí, si, S, para representar el sí, por ejemplo. Para atajar este problema deberemos definir con los usuarios correctamente el contenido de cada campo de manera que podamos aplicar reglas de tratamiento de estos errores.
+
+Otro problema que nos podemos encontrar es que uno de los campos no exista en un fichero. Será necesario tratar con el usuario acerca del porqué de este problema y la forma de corregirlo en la lectura.
+
+Además al tratarse de ficheros Excel, el idioma del SO, afecta al formato de las fechas, al indicador decimal '.' ó ','; por lo que el análisis univariable de los campos numéricos nos indicará si están produciendose problemas de este tipo.
+
+
+## Pregunta 2:
+
+*A partir de los datos del fichero Country.xlsx cargados en R, extrae y pon en gráficos, toda la información que veas interesante para conocer los datos. Explica el proceso que has seguido y como lo has planteado y realizado, no únicamente las pantallas. Explica los resultados obtenidos.*
+
+Antes de comenzar con el análisis exponemos el planteamiento a seguir:
+
+* Primero analizaremos el dataset y las columnas que lo componen.
+* En segundo lugar analizaremos los datos por bloques temáticos, intentando extraer conclusiones entre la relación de las variables.
+* Finalmente lanzaremos un análisis de correlación por variable.
+
+En primer lugar analizamos el dataset:
+
+```{r exploracion0, echo=TRUE, warning=FALSE}
+countries %>% str
+```
+
+Vemos que se trata de información socio-económica de 185 países. En su mayoría se tratan de variables numéricas con variables económicas, demográficas y tecnológicas. Las variables categóricas describen el contiente o los sectores económicos o demográficos más importantes. Analizando los nombres de las variables vemos que esos '$' pueden dar problemas para el tratamiento en R, por lo que los eliminaremos:
+
+```{r setup 2, echo=TRUE, warning=TRUE}
+names(countries) <- 
+  countries %>% 
+  names(.) %>% 
+  str_replace( .,  "[-!$%^&*()+|~=`{}:;<>?,.]", replacement = 'dollars') %>% 
+  str_to_lower()
+```
+
+Antes de explorar las variables, vamos a extraer unas estadísticas de calidad de los datos:
+
+```{r calidad0, echo=TRUE, warning=TRUE}
+countries %>% 
+  is.na(.) %>% 
+  colSums() %>% 
+  data.frame(nas=.) %>% 
+  mutate(var=rownames(.)) %>% 
+  ggplot(data=.)+
+  aes( x=(var), y=nas)+
+  geom_bar(stat = 'identity')+
+  labs(x='variable', y='número faltantes')+
+  ggtitle('Conteo de NAs')+
+  scale_fill_manual(values = c(RColorBrewer::brewer.pal('BrBG', n=5)))+
+  theme(axis.line = element_line(colour = "black", size = 0.5, linetype = "dashed"),
+        axis.text.x = element_text(size=10, angle=45),
+        legend.position = 'top')
+```
+
+Vemos que hay algunas variables más vacías que otras: las variables de producción de combustibles fósiles parecen las más afectadas. Asumiendo que la falta de este dato es que la producción es 0 se puede sustituir por 0 los NAs. Sin embargo, si representan datos deconocidos y esta variable debiera entrar en algún modelo, es candidata a tratarse con una lógica más elaborada: 
+
+- imputación del valor medio del contiente o del valor medio de la producción de países de similares características (requeriría de un clustering)
+- discretización y construcción de una categoría 'DSCN'.
+
+
+Por países observamos que son pocos los países que tienen más de 10 campos faltantes. Según que análisis queramos realizar, es probable que haya que prescindir de estos registros, aún imputando los faltantes.
+
+```{r calidad1, echo=TRUE, warning=TRUE}
+countries %>% 
+  is.na(.) %>% 
+  rowSums() %>% 
+  data.frame(nas=.) %>% 
+  cbind(., name=countries$name) %>% 
+  filter(nas>10) %>% 
+  ggplot(data=.)+
+  aes( x=(name), y=nas)+
+  geom_bar(stat = 'identity')+
+  labs(x='país', y='número faltantes')+
+  ggtitle('Conteo de NAs')+
+  scale_fill_manual(values = c(RColorBrewer::brewer.pal('BrBG', n=5)))+
+  theme(axis.line = element_line(colour = "black", size = 0.5, linetype = "dashed"),
+        axis.text.x = element_text(size=10, angle=45),
+        legend.position = 'top')
+```
+
+A continuación pasamos a realizar análisis de algunas de las variables del dataset. En función del objetivo del dataset y del proyecto deberemos analizar todas o sólo un subset. En este caso realizaremos un análisis conducido según variables de interés general.
+
+La primera exploración que haremos será ver la distribución de población de los países:
+
+```{r exploracion1, echo=TRUE, warning=FALSE}
+countries %>% 
+  ggplot(data=.)+
+  aes( x=(population))+
+  geom_density(alpha=.5)+
+  labs(x='población', y='densidad')+
+  ggtitle('Población por país')+
+  scale_fill_manual(values = c(RColorBrewer::brewer.pal('BrBG', n=5)))+
+  theme(axis.line = element_line(colour = "black", size = 0.5, linetype = "dashed"),
+        legend.position = 'top')
+```
+
+Vemos que la mayoría de los países se agrupa en la primera franja entre 0-250M habitantes. Sin embargo existe algún país que supera con creces dicho valor llegando a más de 1000M. 
+
+```{r exploracion2, echo=TRUE, warning=FALSE}
+countries %>% 
+  arrange(desc(population)) %>% 
+  head(5) %>% 
+  ggplot(data=.)+
+  aes(x=(name), y = population)+
+  geom_bar(alpha=.5, stat = 'identity')+
+  labs(x='país', y='población')+
+  ggtitle('Top 5 países')+
+  scale_fill_manual(values = c(RColorBrewer::brewer.pal('BrBG', n=5)))+
+  theme(axis.line = element_line(colour = "black", size = 0.5, linetype = "dashed"),
+        legend.position = 'top')
+```
+
+Si fuera necesario analizar la población en algún modelo sería más útil emplear alguna transformación como el logaritmo para homogeneizar la escala:
+
+```{r exploracion3, echo=TRUE, warning=FALSE}
+countries %>% 
+  ggplot(data=.)+
+  aes(x=log(population))+
+  geom_density(alpha=.5)+
+  labs(x='población (log)', y='densidad', fill='contiente')+
+  ggtitle('Población por país - logaritmo')+
+  scale_fill_manual(values = c(RColorBrewer::brewer.pal('BrBG', n=5)))+
+  theme(axis.line = element_line(colour = "black", size = 0.5, linetype = "dashed"),
+        legend.position = 'top')
+```
+
+También podemos ver que la población no se reparte de la misma manera por continente:
+
+```{r exploracion4, echo=TRUE, warning=FALSE}
+countries %>% 
+  ggplot(data=.)+
+  aes(x=log(population), fill=continent)+
+  geom_density(alpha=.5)+
+  labs(x='población (log)', y='densidad', fill='contiente')+
+  ggtitle('Población por continente - logaritmo')+
+  scale_fill_manual(values = c(RColorBrewer::brewer.pal('BrBG', n=5)))+
+  theme(axis.line = element_line(colour = "black", size = 0.5, linetype = "dashed"),
+        legend.position = 'top')
+```
+
+En cuanto a la información económica, analizamos un primer factor que puede influir en la renta per cápita y es el tipo de población: urban/no urbana. 
+
+*NOTA*: al tratarse de un porcentaje sólo exploraremos una de las variables. La otra es complementaria.
+
+```{r exploracion5, echo=TRUE, warning=FALSE}
+countries %>% 
+  ggplot(data=.)+
+  aes(size=log(population), x=urban_population, y=gdp_dollars_per_capita)+
+  geom_point(alpha=.3)+
+  labs(x='población urbana', y='renta per capita', size='población')+
+  ggtitle('RPC vs porcentaje población urbana')+
+  scale_fill_manual(values = c(RColorBrewer::brewer.pal('BrBG', n=5)))+
+  theme(axis.line = element_line(colour = "black", size = 0.5, linetype = "dashed"),
+        legend.position = 'none')+
+  stat_smooth(aes(x=urban_population, y=gdp_dollars_per_capita), color='#FF9F4C', method = 'loess') + 
+  geom_text(aes(label=name), size=2)
+```
+
+El efecto es claro salvo en algún outlier (Liechenstein). A partir de un 50% de población urbana la RPC se dispara.
+
+Otra entidad a analizar será el efecto de la distribución de sectores. Al tratarse 3 variables complementarias, podemos hacer un gráfico 2D:
+
+```{r exploracion6, echo=TRUE, warning=FALSE}
+countries %>% 
+  ggplot(data=.)+
+  aes(x=primary_sector, y=secondary_sector, z=gdp_dollars_per_capita)+
+  stat_summary_2d(fun=mean, bins=10, na.rm=TRUE)+
+  labs(x='sector primario', y='sector secundario', fill='rpc')+
+  ggtitle('Mapa calor rpc frente a sectores primario y secundario')+
+  scale_fill_gradient(low = '#086D72', high = '#FF9F4C')+
+  theme(axis.line = element_line(colour = "black", size = 0.5, linetype = "dashed"),
+        legend.position = 'top') + 
+  scale_x_continuous(breaks = c(0, 25, 50, 75, 100))
+```
+
+```{r exploracion7, echo=TRUE, warning=FALSE}
+countries %>% 
+  ggplot(data=.)+
+  aes(x=secondary_sector, y=tertiary_sector, z=gdp_dollars_per_capita)+
+  stat_summary_2d(fun=mean, bins=10, na.rm=TRUE)+
+  labs(x='sector secundario', y='sector terciario', fill='rpc')+
+  ggtitle('Mapa calor rpc frente a sectores terciario y secundario')+
+  scale_fill_gradient(low = '#086D72', high = '#FF9F4C')+
+  theme(axis.line = element_line(colour = "black", size = 0.5, linetype = "dashed"),
+        legend.position = 'top') + 
+  scale_x_continuous(breaks = c(0, 25, 50, 75, 100))
+```
+
+Se aprecia la correlación entre las variables. 
+
+Finalmente para concluir el análisis exploratorio, lanzamos un análisis de correlación por variable. Esto nos ayudará a análisis posteriores.
+
+```{r exploracion8, echo=TRUE, warning=FALSE}
+countries %>% 
+  ggcorr(low = '#086D72', high = '#FF9F4C')+
+  ggtitle('Correlación de variables')+
+  theme(axis.line = element_line(colour = "black", size = 0.5, linetype = "dashed"),
+        legend.position = 'right')
+```
+
+Un resultado interesante de este gráfico es la correlación entre doctores y la rpc que aparece negativa:
+
+```{r exploracion9, echo=TRUE, warning=FALSE}
+countries %>% 
+  ggplot(data=.)+
+  aes(x=(doctors), y=gdp_dollars_per_capita)+
+  geom_point(alpha=.5)+
+  labs(x='doctors', y='rpc')+
+  ggtitle('Núm. doctores vs RPC')+
+  scale_fill_viridis(option = 'A')+
+  theme(axis.line = element_line(colour = "black", size = 0.5, linetype = "dashed"),
+        legend.position = 'top') + 
+  scale_x_continuous(breaks = c(0, 25, 50, 75, 100))+ 
+  geom_text(aes(label=name), size=2)
+```
+
+## Pregunta 3:
+
+*Discretiza al menos 1 campo del fichero country.xlsx. Redacta un breve escrito detallando qué has hecho y con qué propósito. ¿Qué campos has elegido para categorizar? ¿Qué pasos has seguido? ¿Qué resultado has obtenido?*
+
+Usaremos el paquete `CORElearn` de R para realizar la discretizacion.
+
+En primer lugar vamos a justificar el propósito de la discretización o su utilidad. Tenemos unas hipótesis de partida: la correlación entre la rpc y varias variables. Nuestra intención será analizar dichas variables y ver si existe la correlación que se observa en los gráficos. La discretización nos ayudará a intentar mejorar la robustez estadística de nuestro modelo empleado para demostrar las correlaciones. Otro enfoque sería utilizar el poder predictivo como medida de mejora de la discretización de variables, tal y cómo se propone en la lectura recomendada.
+
+Hemos visto en las gráficas anteriores que existía cierta correlación entre la rpc de los países y el porcentaje de población rural o el número de doctores. Vamos a analizar si dicha correlación se traduce a un simple modelo lineal:
+
+```{r discretizacion, warning=FALSE, echo=TRUE}
+lm(data=countries, formula=gdp_dollars_per_capita ~ urban_population + doctors) %>% summary
+
+```
+
+Para el caso del porcentaje de población urbana se demuestra la correlación. Sin embargo, este modelo lineal, debido a sus limitaciones no es capaz de captar la relación que sí se observaba en los gráficos. 
+
+Puesto que en los gráficos se observaban varios grupos de países en función al número de doctores: uno inicial con un número 'muy bajo', 'bajo', otro 'medio' y otro 'alto', podemos realizar una discretización sencilla, dividiendo el espacio en cuatro grandes intervalos, en los que exista el mismo número de países. 
+
+```{r discretizacion1, warning=FALSE, echo=TRUE}
+countries %>% mutate(doctors_discrete=arules::discretize(doctors, method = 'frequency', categories = 4)) %>% select(name, doctors, doctors_discrete) %>% na.omit %>% head(10)
+```
+
+Veamos si ésta discretización mejora el modelo:
+
+```{r discretizacion2, warning=FALSE, echo=TRUE}
+countries %>% 
+  mutate(doctors_discrete=arules::discretize(doctors, method = 'frequency', categories = 4)) %>% 
+  lm(data=., formula=gdp_dollars_per_capita ~ urban_population + doctors_discrete) %>% 
+  summary
+```
+
+En efecto, no sólo ahora el modelo es capaz de identificar la variable como significativa si no que el $R²$ ha mejorado en casi 10 puntos. La discretización, por tanto, ayuda a la extracción de resultados, incluso utilizando un método simple, no-supervisado.
+
+Con un algoritmo más sofisticado obtenemos una discretización más 'robusta' que en este caso no se traduce en una mejora de los ratios estadísticos que estamos tomando como referencia.
+
+```{r discretizacion3, warning=FALSE, echo=TRUE}
+cutpoints<-countries %>% 
+  CORElearn::discretize(formula = gdp_dollars_per_capita ~ doctors+urban_population, data = ., method = 'greedy', discretizationLookahead=0, maxBins = 4, estimator = 'Accuracy')
+
+countries %>% 
+  mutate(doctors_discrete=cut(doctors, breaks = c(207, cutpoints$doctors, Inf))) %>% 
+  lm(data=., formula=gdp_dollars_per_capita ~ urban_population + doctors_discrete) %>% 
+  summary
+
+``` 
+
+Como conclusión a este apartado podemos decir que la discretización ayuda a obtener resultados más robustos, precisos e interpretables.
+
+## Pregunta 4:
+
+*Propón y realiza al menos una transformación, mediante expresiones de un campo o campos del fichero country.xlsx. ¿Qué campos has tratado? ¿Con qué propósito? ¿Qué expresiones te han ayudado? Confróntalo con la lectura del Módulo 2 y explica lo que has hecho*
+
+En el anterior apartado hemos analizado la relación lineal entre la rpc y el número de doctores y el porcentaje de 'urbanidad' de la población. Sin embargo, analizando las gráficas, se observa que la relación es claramente no-lineal. Por ello, vamos a realizar una transformación de alguno de estos campos para poder tomar conclusiones más fiables.
+
+En primer lugar vamos a transformar la relación entre la rpc y el porcentaje de población urbana tomando el **logartimo** de la variable:
+
+```{r transformaciones1, echo=TRUE, warning=FALSE}
+countries %>% 
+  ggplot(data=.)+
+  aes(size=log(population), x=urban_population, y=log(gdp_dollars_per_capita))+
+  geom_point(alpha=.3)+
+  labs(x='población urbana', y='renta per capita', size='población')+
+  ggtitle('RPC (log) vs porcentaje población urbana')+
+  scale_fill_manual(values = c(RColorBrewer::brewer.pal('BrBG', n=5)))+
+  theme(axis.line = element_line(colour = "black", size = 0.5, linetype = "dashed"),
+        legend.position = 'none')+
+  stat_smooth(aes(x=urban_population, y=log(gdp_dollars_per_capita)), color='#FF9F4C', method = 'loess') + 
+  geom_text(aes(label=name), size=2)
+```
+
+Cómo se aprecia con facilidad hemos transformado una relación muy no-lineal en una prácticamente lineal. Veamos si se observa en el modelo:
+
+```{r transformacion2, warning=FALSE, echo=TRUE}
+lm(data=countries, formula=log(gdp_dollars_per_capita) ~ urban_population + doctors) %>% summary
+
+```
+
+Cómo vemos, no sólo aumenta el $R²$ si no que los *p-values* de ambas variables sin necesidad de realizar ninguna transformación se convierten en significativos.
+
+Exploremos la relación entre los doctores y la rpc:
+
+
+```{r transformacion3, warning=FALSE, echo=TRUE}
+countries %>% 
+  ggplot(data=.)+
+  aes(size=log(population), x=doctors, y=log(gdp_dollars_per_capita))+
+  geom_point(alpha=.3)+
+  labs(x='número doctores', y='renta per capita', size='número doctores')+
+  ggtitle('RPC (log) vs número doctores')+
+  scale_fill_manual(values = c(RColorBrewer::brewer.pal('BrBG', n=5)))+
+  theme(axis.line = element_line(colour = "black", size = 0.5, linetype = "dashed"),
+        legend.position = 'none')+
+  stat_smooth(aes(x=doctors, y=log(gdp_dollars_per_capita)), color='#FF9F4C', method = 'loess') + 
+  geom_text(aes(label=name), size=2)
+```
+
+La relación se suaviza pero sigue siendo marcadamente no lineal, al menos por intervalos.
+
+
+```{r transformacion4, warning=FALSE, echo=TRUE}
+countries %>% 
+  ggplot(data=.)+
+  aes(size=log(population), x=log(doctors), y=log(gdp_dollars_per_capita))+
+  geom_point(alpha=.3)+
+  labs(x='número de doctores', y='renta per capita', size='población')+
+  ggtitle('RPC (log) vs número doctores (log)')+
+  scale_fill_manual(values = c(RColorBrewer::brewer.pal('BrBG', n=5)))+
+  theme(axis.line = element_line(colour = "black", size = 0.5, linetype = "dashed"),
+        legend.position = 'none')+
+  stat_smooth(aes(x=log(doctors), y=log(gdp_dollars_per_capita)), color='#FF9F4C', method = 'loess') + 
+  geom_text(aes(label=name), size=2)
+```
+
+Tomando logarítmos en ambas variables, vemos que la relación no-lineal se amortigua y se traslada al modelo:
+
+```{r transformacion5, warning=FALSE, echo=TRUE}
+lm(data=countries, formula=log(gdp_dollars_per_capita) ~ urban_population + log(doctors)) %>% summary
+
+```
+
+A continuación vamos a realizar un análisis adicional. Vamos a observar la correlación entre las dos variables que estamos empleando para explicar la rpc:
+
+```{r transformacion6, warning=FALSE, echo=TRUE}
+countries %>% 
+  ggplot(data=.)+
+  aes(size=log(population), x=log(doctors), y=urban_population)+
+  geom_point(alpha=.3)+
+  labs(y='población urbana', x='número doctores (log)', size='población')+
+  ggtitle('Población urbana vs número de doctores (log)')+
+  scale_fill_manual(values = c(RColorBrewer::brewer.pal('BrBG', n=5)))+
+  theme(axis.line = element_line(colour = "black", size = 0.5, linetype = "dashed"),
+        legend.position = 'none')+
+  geom_text(aes(label=name), size=2)
+```
+
+Cómo vemos (tomando logaritmos para el número de doctores), ambas variables están fuertemente correladas. Esta circunstancia, no siempre es del todo recomendable a la hora de intentar explicar una tercera. Por ello vamos a analizar la posibilidad de incluir una 'variable sintética' que representa a ambas, de forma que simplifiquemos el modelo anterior, robusteciéndolo:
+
+```{r transformacion7, warning=FALSE, echo=TRUE}
+cutpoints<-countries %>% 
+  CORElearn::discretize(
+    formula = gdp_dollars_per_capita ~ doctors + urban_population, 
+    data = ., 
+    method = 'greedy', discretizationLookahead=0, maxBins = 4, estimator = 'Accuracy')
+
+countries %>% 
+  mutate(doctors_discrete=cut((doctors), breaks = c(207, cutpoints$doctors, Inf)),
+         urban_population_discrete=cut(urban_population, breaks = c(0, cutpoints$urban_population, 100))) %>% 
+  select(gdp_dollars_per_capita, urban_population_discrete, doctors_discrete) %>% 
+  na.omit %>% 
+  mutate(doc_urbPop_int=paste(urban_population_discrete, doctors_discrete)) %>% 
+  lm(data=., formula=log(gdp_dollars_per_capita) ~ doc_urbPop_int) %>% summary
+
+```
+
+Según se observa el $R²$ tras este tratamiento baja en 6 puntos. El modelo ahora sólo incluye una entidad que es la combinación de ambas circunstancias, además discretizadas. De forma que el modelo debería ser menos sensible a outliers, o cambios, sin embargo, deberán explorarse otras vías de robustez, antes de dar por buena esta nueva variable sintética.
+
+Como conclusión, añadir, que debido a que nos encontramos en la fase de exploración de los datos y variables. No hemos incluído ningún tipo de análisis de capacidad predictiva que encaja en la fase de modelado.

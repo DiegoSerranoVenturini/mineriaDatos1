@@ -1,0 +1,33 @@
+---
+title: "PEC 3 - mineria de datos"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: 2
+  word_document:
+    toc: yes
+    toc_depth: '2'
+  html_document:
+    df_print: paged
+    css : ds.css
+    toc: yes
+    toc_depth: '2'
+---
+
+
+# Prueba de evaluación contínua 3 - minería de datos (I)
+
+```{r setup, echo=TRUE, warning=FALSE}
+#carga de paquetes
+packs <- c('readxl', 'tidyverse', 'stringr', 'RColorBrewer', 'viridis', 'GGally', 'arules', 'CORElearn')
+suppressWarnings(suppressMessages(sapply(packs, require, character.only=TRUE)))
+
+#ruta a los datos:
+datapath <- '../data/'
+
+#carga de los datos
+titanic <- read.csv2(paste0(datapath, 'titanic.csv'), sep=',')
+
+```
+
+## Pregunta 1:
