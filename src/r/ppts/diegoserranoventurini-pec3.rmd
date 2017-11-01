@@ -19,15 +19,218 @@ output:
 
 ```{r setup, echo=TRUE, warning=FALSE}
 #carga de paquetes
-packs <- c('readxl', 'tidyverse', 'stringr', 'RColorBrewer', 'viridis', 'GGally', 'arules', 'CORElearn')
+packs <- c('readxl', 'tidyverse', 'stringr', 'RColorBrewer', 'caret', 'GGally', 'arules', 'CORElearn', 'C50', 'randomForest', 'partykit', 'ROCR')
 suppressWarnings(suppressMessages(sapply(packs, require, character.only=TRUE)))
 
 #ruta a los datos:
 datapath <- '../data/'
 
 #carga de los datos
-titanic <- read.csv2(paste0(datapath, 'titanic.csv'), sep=',')
-
+titanic         <- read.csv2(paste0(datapath, 'titanic.csv'), sep=',', encoding = 'UTF-8')
+names(titanic)  <- names(titanic) %>% str_to_lower()
 ```
 
 ## Pregunta 1:
+
+## Pregunta 2:
+
+*2. En este ejercicio vais a seguir los pasos del ciclo de vida de un proyecto de minería de datos para el caso de un algoritmo de clasificación y más concretamente un árbol de decisión. Lo haréis con el archivo titanic.csv, que se encuentra en la wiki. Este archivo contiene un registro por cada pasajero que viajaba en el Titanic. En las variables se caracteriza si era hombre o mujer, adulto o niño, en qué categoría viajaba o si era miembro de la tripulación*
+
+*Estudiar los datos, por ejemplo: ¿Número de registros del fichero? ¿Distribuciones de valores por variables? ¿Hay campos mal informados o vacíos?*
+
+
+
+En primer lugar vamos a analizar la estructura del dataset:
+
+``````{r exploracion_0, echo=TRUE, warning=FALSE}
+titanic %>% str
+```
+
+Se trata de un dataset compuesto de 4 variables:
+
+1. *class*: categórica con 4 niveles. Indica la clase en la que viajaban los pasajeros.
+2. *age*: categórica con dos niveles. Indica la edad de los pasajeros en dos grupos: niño o adulto.
+3. *sex*: categórica con dos niveles. Indica el sexo de los pasajeros.
+4. *survived: categórica con dos niveles. Indica si el pasajero sobrevivió al viaje.
+
+Las variables están muy bien informadas como se muestra a continuación:
+
+```{r exploracion_02, echo=TRUE, warning=FALSE}
+titanic %>% is.na %>% colSums()
+```
+
+Sin embargo, la variable age tiene la categoría *Niño* que está mal formateada. La convertimos en una categoría correcta
+```{r setup2, echo=TRUE, warning=FALSE}
+titanic <- titanic %>% mutate(age=ifelse(age=='Adulto', age, 'NoAdulto') %>% as.factor())
+```
+
+Siguiendo con la metodología de exploración clásica vamos realizar un análisis univariante, graficando mediante histogramas las distribuciones de los valores de las variables. Vamos a segmentar cada variable por la clase *survived* para hacernos una idea de qué variables son relevantes para predecir el desenlace:
+
+```{r exploracion_1, echo=TRUE, warning=FALSE}
+titanic %>% 
+  ggplot(data = .) +
+  aes(x=survived, fill=survived) + 
+  geom_bar(color='black') + 
+  scale_fill_manual(values=c('grey', '#24CF4A'))+
+  labs(x='', y='número de personas', fill='desenlace')+
+  ggtitle('Balance de supervivientes')+
+  theme(axis.line = element_line(colour = "black", size = 0.5, linetype = "dashed"),
+        axis.text.x = element_blank(),
+        axis.title.x= element_blank(),
+        legend.position = 'top')
+
+```
+```{r exploracion_2, echo=TRUE, warning=FALSE}
+titanic %>% 
+  ggplot(data = .) +
+  aes(x=sex, fill=survived) + 
+  geom_bar(color='black') + 
+  scale_fill_manual(values=c('grey', '#24CF4A'))+
+  labs(x='', y='número de personas', fill='sexo')+
+  ggtitle('Balance de sexos')+
+  theme(axis.line = element_line(colour = "black", size = 0.5, linetype = "dashed"),
+        # axis.text.x = element_blank(),
+        axis.title.x= element_blank(),
+        legend.position = 'top')
+
+```
+
+```{r exploracion_3, echo=TRUE, warning=FALSE}
+titanic %>% 
+  ggplot(data = .) +
+  aes(x=age, fill=survived) + 
+  geom_bar(color='black') + 
+  scale_fill_manual(values=c('grey', '#24CF4A'))+
+  labs(x='', y='número de personas', fill='desenlace')+
+  ggtitle('Balance de edades')+
+  theme(axis.line = element_line(colour = "black", size = 0.5, linetype = "dashed"),
+        # axis.text.x = element_blank(),
+        axis.title.x= element_blank(),
+        legend.position = 'top')
+
+```
+```{r exploracion_4, echo=TRUE, warning=FALSE}
+titanic %>% 
+  ggplot(data = .) +
+  aes(x=class, fill=survived) + 
+  geom_bar(color='black') + 
+  scale_fill_manual(values=c('grey', '#24CF4A'))+
+  labs(x='', y='número de personas', fill='desenlace')+
+  ggtitle('Balance de edades')+
+  theme(axis.line = element_line(colour = "black", size = 0.5, linetype = "dashed"),
+        # axis.text.x = element_blank(),
+        axis.title.x= element_blank(),
+        legend.position = 'top')
+
+```
+
+Vemos que por clase, edad o género existen diferencias significativas en el ratio de **supervivencia**.
+
+
+*Preparad los datos. En este caso ya están en el formato correcto y no es necesario discretizar ni generar atributos nuevos. Hay que elegir cuáles son las variables que se utilizarán para construir el modelo y cuál es la variable que clasifica. En este caso la variable por la que clasificaremos es el campo de si el pasajero sobrevivió o no*
+
+Vamos a preparar el dataset para entrenar un árbol de decisión. En siguientes apartados se pide cuantificar la calidad del modelo; por tanto, vamos a hacer una división del dataset para probar la capacidad predictiva del mismo. Para ello, diviremos el conjunto en 2 subconjuntos: uno de entrenamiento (*train*) con el 80% de los datos; y uno de validación con el 20% (*test*).
+
+La clase a predecir la almacenamos en el vector `y`. Al mismo tiempo, al tratarse de un dataset con únicamente 3 *features*, que en el análisis exploratorio muestran prometedora capacidad explicativa, los incluimos todos.
+
+Al mismo tiempo, para poder proporcionarle a distintos modelos el dataset vamos a "estandarizarlo", convirtiendo la matriz de variables categóricas en una *sparse matrix*.
+
+```{r preparacion_dataset, echo=TRUE, warning=FALSE}
+#convertimos el dataset en sparse matrix
+titanic_m   <- sparse.model.matrix(data=titanic, survived~.) %>% as.matrix()
+
+#generamos la división del dataset
+trainIndex   <- createDataPartition(titanic$survived, p=.8, times=1, list=FALSE)
+
+#train
+titanicTrain <- titanic[trainIndex, ]
+X_train      <- titanic_m[trainIndex,]
+y_train      <- titanicTrain %>% pull(survived)
+
+#test
+titanicTest  <- titanic[-trainIndex, ]
+X_test       <- titanic_m[-trainIndex,]
+y_test       <- titanicTest %>% pull(survived)
+
+#preparacion para el entrenamiento de modelos
+ctrl <- trainControl(
+   method = 'repeatedcv'
+  ,number = 10
+  ,p = .7
+  ,repeats = 2
+  ,summaryFunction = twoClassSummary
+  ,allowParallel = TRUE
+  ,verboseIter = TRUE
+  ,classProbs = TRUE
+)
+```
+
+*Instalar, si es necesario, el paquete C5.0 a R. Este paquete, documentado en la wiki, es una implementación moderna del algoritmo ID3 de Quinlan. Tiene los principios teóricos del ID3 más la poda automática. Con este paquete generad un modelo de minería*
+
+```{r C50, echo=TRUE, warning=FALSE}
+titanic_c50fit <- C50::C5.0(y=y_train, x=X_train)
+```
+
+*   ¿Cuál es la calidad del modelo? Generar el árbol gráfico. Generar y extraer las reglas del modelo
+
+```{r C50_tree, echo=TRUE, warning=FALSE}
+plot(titanic_c50fit)
+```
+
+```{r C50, echo=TRUE, warning=FALSE}
+summary(titanic_c50fit)
+```
+
+```{r C50_rules, echo=TRUE, warning=FALSE}
+titanic_c50rules <- 
+  train(
+    data = titanicTrain, survived ~ .,
+    method = 'C5.0',
+    trControl = ctrl,
+    metric = 'ROC',
+    tuneGrid = expand.grid(trials = c(1), model=c("rules"), winnow=c("FALSE"))
+  )
+
+cat(titanic_c50rules$finalModel$rules)
+```
+
+*En función del modelo, el árbol y las reglas: ¿Cuál es el conocimiento que sacamos?*
+
+La primera conclusión es que la **variable más importante es el género**. Si miramos el árbol vemos que un individuo tiene un 20% de posibilidades de sobrevivir si es hombre por un 80% si es mujer. Además, si las mujeres pertenecen a una clase distinta a 3era, tienen casi un 100% de probabilidades de sobrevivir por menos de un 50 si pertenecen a 3era.
+
+El resto de variables, aunque pueden aportar en modelos más exhaustivos, en este caso, son desachadas, por no aportar más información.
+
+*Prueba el modelo generado presentándole nuevos registros. Pueden ser inventados o extraídos del conjunto de datos originales. ¿Clasifica suficientemente bien?*
+
+En este paso vamos a entrenar un modelo más exhaustivo y vamos a comparar la capacidad predictiva de estos modelos.
+
+```{r C50_caret, echo=TRUE, warning=FALSE, include=FALSE}
+titanic_c50trainfit <- 
+  train(
+    data = titanicTrain, survived ~ .,
+    method = 'C5.0',
+    trControl = ctrl,
+    metric = 'ROC',
+    tuneGrid = expand.grid(trials = c(5, 10, 20, 50), model=c("tree"), winnow=c("FALSE"))
+  )
+
+```
+
+```{r C50_caret, echo=TRUE, warning=FALSE, include=FALSE}
+preds_c50fit      <- predict(titanic_c50fit, X_test, type='prob')
+preds_c50fittrain <- predict(titanic_c50trainfit, titanicTest, type='prob')
+
+perf_c50fit <-performance(
+  prediction(labels = y_test, predictions = preds_c50fit[,2]), 
+  measure = 'tpr', 
+  x.measure = 'fpr')
+
+plot(perf_c50fit)
+
+perf_c50fittrain <-performance(
+  prediction(labels = y_test, predictions = preds_c50fittrain[,2]), 
+  measure = 'tpr', 
+  x.measure = 'fpr')
+
+plot(perf_c50fittrain)
+```
