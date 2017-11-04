@@ -17,9 +17,57 @@ output:
 
 # Prueba de evaluación contínua 3 - minería de datos (I)
 
+## Pregunta 1:
+
+### 1.1
+
+*¿Creéis que los árboles de decisión son el método más adecuado para conseguir los objetivos que os habíais propuesto? Justificad la respuesta razonándola. Si lo deseáis, podéis redefinir o adecuar la propuesta de proyecto.*
+
+Sí. Uno de los objetivos del proyecto era extraer aquellas variables que eran relevantes para el desempeño del programa, y aquellos puntos de acción para mejorar dicho resultado.
+
+Los árboles de decisión, a parte de permitir estudiar relaciones más complejas que un modelo lineal, tienen la virtud de ser una herramienta muy explicativa. Es decir, sus resultados son reglas interpretables por las personas sin apenas formación especializada. 
+
+Por ello, esta técnica sería una de las primeras en emplearse para generar valor al programa. Utilizaríamos el histórico de jóvenes intervenidos, con sus características y los programas en los que han participado, para construir un árbol que nos indique cuáles son las variables más importantes y en qué valores, en el desempeño de las acciones.
+
+Dichas conclusiones además se podrían visualizar en formato de árbol o reglas para poder ser difundidas a aquellos responsables que requieran el conocimiento extraído del proyecto.
+
+### 1.2
+
+*¿Cómo podría ser el árbol resultante?*
+
+Un ejemplo de árbol resultante para un programa de refuerzo escolar con 2 variables sería:
+
+0.0 **Realiza las tareas semanalmente**
+  0.1. *Sí*
+    0.1.0. La familia está implicada en el programa
+      0.1.1. *Sí* -> $desempeño \in [7, 10]$
+      0.1.2. *No* -> $desempeño \in [4, 8]$ 
+  0.2. *No*
+    0.2.0. **La familia está implicada en el programa**
+      0.2.1. *Sí* -> $desempeño \in [2, 7]$
+      0.2.2. *No* -> $desempeño \in [0, 6]$ 
+
+Como vemos el output del árbol es un intervalo en el que la variable está contenida. Algunos algorimos dan directamente un valor de la variable respuesta o una distribución de probabilidad en cada hoja.
+
+### 1.3
+
+*¿Podríais dar, al menos, tres ejemplos de reglas que se podrían derivar del árbol de decisión de vuestro proyecto?*
+
+A parte de las reglas del ejemplo anterior, podrían darse reglas del tipo:
+
+1. $notasMatematicas > 7$ -> $desempeño > 7$
+2. $EstudiosFamilia \in ('FormacionUniversitaria') \& \ apoyoEnOtrasAreas =1$ -> $desempeño \in (6,10)$
+
+## Pregunta 2:
+
+### 2.1
+*En este ejercicio vais a seguir los pasos del ciclo de vida de un proyecto de minería de datos para el caso de un algoritmo de clasificación y más concretamente un árbol de decisión. Lo haréis con el archivo titanic.csv, que se encuentra en la wiki. Este archivo contiene un registro por cada pasajero que viajaba en el Titanic. En las variables se caracteriza si era hombre o mujer, adulto o niño, en qué categoría viajaba o si era miembro de la tripulación*
+
+*Estudiar los datos, por ejemplo: ¿Número de registros del fichero? ¿Distribuciones de valores por variables? ¿Hay campos mal informados o vacíos?*
+
 ```{r setup, echo=TRUE, warning=FALSE}
 #carga de paquetes
-packs <- c('readxl', 'tidyverse', 'stringr', 'RColorBrewer', 'caret', 'GGally', 'arules', 'CORElearn', 'C50', 'randomForest', 'partykit', 'ROCR')
+packs <- c('readxl', 'tidyverse', 'stringr', 'RColorBrewer', 'caret', 'GGally', 'arules', 'CORElearn', 'C50', 'ranger', 'partykit', 'ROCR')
 suppressWarnings(suppressMessages(sapply(packs, require, character.only=TRUE)))
 
 #ruta a los datos:
@@ -29,15 +77,6 @@ datapath <- '../data/'
 titanic         <- read.csv2(paste0(datapath, 'titanic.csv'), sep=',', encoding = 'UTF-8')
 names(titanic)  <- names(titanic) %>% str_to_lower()
 ```
-
-## Pregunta 1:
-
-## Pregunta 2:
-
-*2. En este ejercicio vais a seguir los pasos del ciclo de vida de un proyecto de minería de datos para el caso de un algoritmo de clasificación y más concretamente un árbol de decisión. Lo haréis con el archivo titanic.csv, que se encuentra en la wiki. Este archivo contiene un registro por cada pasajero que viajaba en el Titanic. En las variables se caracteriza si era hombre o mujer, adulto o niño, en qué categoría viajaba o si era miembro de la tripulación*
-
-*Estudiar los datos, por ejemplo: ¿Número de registros del fichero? ¿Distribuciones de valores por variables? ¿Hay campos mal informados o vacíos?*
-
 
 
 En primer lugar vamos a analizar la estructura del dataset:
@@ -124,22 +163,21 @@ titanic %>%
 
 ```
 
-Vemos que por clase, edad o género existen diferencias significativas en el ratio de **supervivencia**.
+Vemos que por clase, edad o género existen diferencias significativas en el **ratio de supervivencia**.
 
-
+### 2.2
 *Preparad los datos. En este caso ya están en el formato correcto y no es necesario discretizar ni generar atributos nuevos. Hay que elegir cuáles son las variables que se utilizarán para construir el modelo y cuál es la variable que clasifica. En este caso la variable por la que clasificaremos es el campo de si el pasajero sobrevivió o no*
 
 Vamos a preparar el dataset para entrenar un árbol de decisión. En siguientes apartados se pide cuantificar la calidad del modelo; por tanto, vamos a hacer una división del dataset para probar la capacidad predictiva del mismo. Para ello, diviremos el conjunto en 2 subconjuntos: uno de entrenamiento (*train*) con el 80% de los datos; y uno de validación con el 20% (*test*).
 
 La clase a predecir la almacenamos en el vector `y`. Al mismo tiempo, al tratarse de un dataset con únicamente 3 *features*, que en el análisis exploratorio muestran prometedora capacidad explicativa, los incluimos todos.
 
-Al mismo tiempo, para poder proporcionarle a distintos modelos el dataset vamos a "estandarizarlo", convirtiendo la matriz de variables categóricas en una *sparse matrix*.
-
 ```{r preparacion_dataset, echo=TRUE, warning=FALSE}
 #convertimos el dataset en sparse matrix
 titanic_m   <- sparse.model.matrix(data=titanic, survived~.) %>% as.matrix()
 
 #generamos la división del dataset
+set.seed(123) # fijamos la semilla para la reproducibilidad de los experimentos.
 trainIndex   <- createDataPartition(titanic$survived, p=.8, times=1, list=FALSE)
 
 #train
@@ -160,77 +198,368 @@ ctrl <- trainControl(
   ,repeats = 2
   ,summaryFunction = twoClassSummary
   ,allowParallel = TRUE
-  ,verboseIter = TRUE
+  ,verboseIter = FALSE
   ,classProbs = TRUE
 )
 ```
 
+### 2.3
 *Instalar, si es necesario, el paquete C5.0 a R. Este paquete, documentado en la wiki, es una implementación moderna del algoritmo ID3 de Quinlan. Tiene los principios teóricos del ID3 más la poda automática. Con este paquete generad un modelo de minería*
 
 ```{r C50, echo=TRUE, warning=FALSE}
 titanic_c50fit <- C50::C5.0(y=y_train, x=X_train)
 ```
 
-*   ¿Cuál es la calidad del modelo? Generar el árbol gráfico. Generar y extraer las reglas del modelo
+### 2.4
+*¿Cuál es la calidad del modelo? Generar el árbol gráfico. Generar y extraer las reglas del modelo*
 
 ```{r C50_tree, echo=TRUE, warning=FALSE}
 plot(titanic_c50fit)
 ```
 
-```{r C50, echo=TRUE, warning=FALSE}
-summary(titanic_c50fit)
-```
-
-```{r C50_rules, echo=TRUE, warning=FALSE}
+```{r C50_rules, echo=TRUE, warning=FALSE, include=TRUE}
 titanic_c50rules <- 
-  train(
+   suppressMessages( suppressWarnings( train(
     data = titanicTrain, survived ~ .,
     method = 'C5.0',
     trControl = ctrl,
-    metric = 'ROC',
+    metric = 'Sens',
     tuneGrid = expand.grid(trials = c(1), model=c("rules"), winnow=c("FALSE"))
-  )
+  ) ))
 
 cat(titanic_c50rules$finalModel$rules)
 ```
 
+### 2.5
 *En función del modelo, el árbol y las reglas: ¿Cuál es el conocimiento que sacamos?*
 
 La primera conclusión es que la **variable más importante es el género**. Si miramos el árbol vemos que un individuo tiene un 20% de posibilidades de sobrevivir si es hombre por un 80% si es mujer. Además, si las mujeres pertenecen a una clase distinta a 3era, tienen casi un 100% de probabilidades de sobrevivir por menos de un 50 si pertenecen a 3era.
 
-El resto de variables, aunque pueden aportar en modelos más exhaustivos, en este caso, son desachadas, por no aportar más información.
+El resto de variables, aunque pueden aportar en modelos más complejos, en este caso, son desachadas, por no aportar más información.
 
+### 2.6
 *Prueba el modelo generado presentándole nuevos registros. Pueden ser inventados o extraídos del conjunto de datos originales. ¿Clasifica suficientemente bien?*
 
-En este paso vamos a entrenar un modelo más exhaustivo y vamos a comparar la capacidad predictiva de estos modelos.
+En este paso vamos a entrenar un modelo más exhaustivo y vamos a comparar la capacidad predictiva de estos modelos. Para ello emplearemos como criterio de comparación el **AUC** del modelo en el mismo dataset de *test*.
 
-```{r C50_caret, echo=TRUE, warning=FALSE, include=FALSE}
-titanic_c50trainfit <- 
-  train(
-    data = titanicTrain, survived ~ .,
-    method = 'C5.0',
-    trControl = ctrl,
-    metric = 'ROC',
-    tuneGrid = expand.grid(trials = c(5, 10, 20, 50), model=c("tree"), winnow=c("FALSE"))
-  )
-
-```
-
-```{r C50_caret, echo=TRUE, warning=FALSE, include=FALSE}
+```{r C50_perf, echo=TRUE, warning=FALSE}
 preds_c50fit      <- predict(titanic_c50fit, X_test, type='prob')
-preds_c50fittrain <- predict(titanic_c50trainfit, titanicTest, type='prob')
 
 perf_c50fit <-performance(
   prediction(labels = y_test, predictions = preds_c50fit[,2]), 
   measure = 'tpr', 
   x.measure = 'fpr')
 
-plot(perf_c50fit)
+auc <- performance(prediction(labels = y_test, predictions = preds_c50fit[,2]), measure = 'auc')
+auc <- auc@y.values[[1]] %>% unlist(.) %>% round(2)
+cbind(x=perf_c50fit@x.values[[1]], y=perf_c50fit@y.values[[1]]) %>% 
+  as.data.frame() %>% 
+  ggplot(data=.) + 
+  aes(x=x, y=y) + 
+  geom_line(color= '#24CF4A')+
+  geom_line(color= 'grey', aes(x=x, y=x), linetype='dotted')+
+  labs(x='ratio falsos \"positivos\"', y='ratio de verdaderos \"positivos\"')+
+  ggtitle(paste0('ROC curve - AUC = ', auc))+
+  theme(axis.line = element_line(colour = "black", size = 0.5, linetype = "dashed"),
+        axis.text.x = element_text(size=10, angle=45),
+        legend.position = 'top')
 
-perf_c50fittrain <-performance(
-  prediction(labels = y_test, predictions = preds_c50fittrain[,2]), 
+
+```
+
+Con un *AUC* relativamente alto, el modelo clasifica suficientemente bien para poder ser empleado en estimaciones orientativas y de referencia.
+
+Por otro lado, el modelo que hemos entrenado es simple y carece de robustez. Esto se debe a que únicamente hemos empleado la configuración por defecto. ¿Cómo sabemos que esa configuración es la óptima para nuestro dataset?
+
+Para dar respuesta a esta pregunta vamos a lanzar un entrenamiento del modelo, que nos permita descartar la posibilidad de que existan otras configuraciones mejores. La librería ![caret](https://caret.r-forge.r-project.org/) pone a nuestra disposición un framework que nos permite realizar este tipo de búsquedas exhaustivas y tener modelos más robustos:
+
+```{r C50_caret, echo=TRUE, warning=FALSE, include=TRUE}
+titanic_c50trainfit <- 
+  suppressMessages( suppressWarnings( train(
+    data = titanicTrain, survived ~ .,
+    method = 'C5.0',
+    trControl = ctrl,
+    metric = 'Sens',
+    tuneGrid = expand.grid(trials = c(5, 10, 20, 50), model=c("tree"), winnow=c("FALSE")) ))
+  )
+preds <- predict(titanic_c50trainfit, titanicTest, type='prob')
+
+perf <- performance(
+  prediction(labels = y_test, predictions = preds[,2]), 
   measure = 'tpr', 
   x.measure = 'fpr')
 
-plot(perf_c50fittrain)
+auc <- performance(prediction(labels = y_test, predictions = preds[,2]), measure = 'auc')
+auc <- auc@y.values[[1]] %>% unlist(.) %>% round(2)
+
+cbind(x=perf@x.values[[1]], y=perf@y.values[[1]]) %>% 
+  as.data.frame() %>% 
+  ggplot(data=.) + 
+  aes(x=x, y=y) + 
+  geom_line(color= '#24CF4A')+
+  geom_line(color= 'grey', aes(x=x, y=x), linetype='dotted')+
+  labs(x='ratio falsos \"positivos\"', y='ratio de verdaderos \"positivos\"')+
+  ggtitle(paste0('ROC curve - AUC = ', auc))+
+  theme(axis.line = element_line(colour = "black", size = 0.5, linetype = "dashed"),
+        axis.text.x = element_text(size=10, angle=45),
+        legend.position = 'top')
 ```
+
+Vemos que este tipo de exploración nos permite encontrar un modelo mejor que el 'por defecto'.
+
+Por otro lado, cómo vimos en el análisis exploratorio la variable respuesta se encuentra "desbalanceada", es decir, existe una proporción de 0s ('muere') más alta que de 1s ('sobrevive'). 
+Al entrenar un modelo con una partición aleatoria, en teoría, sicha distribución de 1s y 0s se debería reflejar en ambos subconjunto. Esto puede llevar a que el modelo 'sobre-aprenda' dicha distribución y no se especialice en la clase relevante, los 1s. 
+
+Una forma clásica de atajar este problema es plantear un balanceo de clases. Es decir, igualar el número de elementos de cada clase o, al menos disminuir las diferencias en proporción.
+
+Para comprobar si en este caso, un balanceo ayuda a la predicción de los supervivientes vamos a realizar un *subsampling* que consiste en mantener todos los elementos de la clase 'positiva', mientras se eligen de forma aleatoria elementos de la clase negativa.
+
+``````{r c50_sub, echo=TRUE, warning=FALSE, include=TRUE}
+ctrl$sampling <- 'down'
+
+titanic_c50trainfit_sub <- 
+  suppressMessages( suppressWarnings( train(
+    data = titanicTrain, survived ~ .,
+    method = 'C5.0',
+    trControl = ctrl,
+    metric = 'Sens',
+    tuneGrid = expand.grid(trials = c(5, 10, 20, 50), model=c("tree"), winnow=c("FALSE")) )) )
+```
+
+Veamos la precisión de este modelo:
+
+```{r c50_sub_perf, echo=TRUE, warning=FALSE}
+preds <- predict(titanic_c50trainfit_sub, titanicTest, type='prob')
+
+perf <- performance(
+  prediction(labels = y_test, predictions = preds[,2]), 
+  measure = 'tpr', 
+  x.measure = 'fpr')
+
+auc <- performance(prediction(labels = y_test, predictions = preds[,2]), measure = 'auc')
+auc <- auc@y.values[[1]] %>% unlist(.) %>% round(2)
+
+cbind(x=perf@x.values[[1]], y=perf@y.values[[1]]) %>% 
+  as.data.frame() %>% 
+  ggplot(data=.) + 
+  aes(x=x, y=y) + 
+  geom_line(color= '#24CF4A')+
+  geom_line(color= 'grey', aes(x=x, y=x), linetype='dotted')+
+  labs(x='ratio falsos \"positivos\"', y='ratio de verdaderos \"positivos\"')+
+  ggtitle(paste0('ROC curve - AUC = ', auc))+
+  theme(axis.line = element_line(colour = "black", size = 0.5, linetype = "dashed"),
+        axis.text.x = element_text(size=10, angle=45),
+        legend.position = 'top')
+```
+
+En este caso el *subsampling* no mejora la capacidad predictiva del modelo. 
+
+Probando modelos más sofísticados, descubrimos que pese a la relativa "sencillez" del método de C50 se asemeja en capacidad predictiva a otros métodos. 
+
+```{r rf_ranger, echo=TRUE, warning=FALSE, include=TRUE}
+ctrl$sampling <- NULL
+suppressMessages( suppressWarnings( titanic_rffit <- 
+  train(
+    data = titanicTrain, survived ~ .,
+    method = 'ranger',
+    trControl = ctrl,
+    metric = 'Sens',
+    tuneGrid = expand.grid(mtry=c(1, 2, 3, 4),splitrule=c('extratrees', 'gini'))) ))
+```
+
+```{r rf_ranger2, echo=TRUE, warning=FALSE}
+preds <- predict(titanic_rffit, titanicTest, type='prob')
+
+perf <- performance(
+  prediction(labels = y_test, predictions = preds[,2]), 
+  measure = 'tpr', 
+  x.measure = 'fpr')
+
+auc <- performance(prediction(labels = y_test, predictions = preds[,2]), measure = 'auc')
+auc <- auc@y.values[[1]] %>% unlist(.) %>% round(2)
+
+cbind(x=perf@x.values[[1]], y=perf@y.values[[1]]) %>% 
+  as.data.frame() %>% 
+  ggplot(data=.) + 
+  aes(x=x, y=y) + 
+  geom_line(color= '#24CF4A')+
+  geom_line(color= 'grey', aes(x=x, y=x), linetype='dotted')+
+  labs(x='ratio falsos \"positivos\"', y='ratio de verdaderos \"positivos\"')+
+  ggtitle(paste0('ROC curve - AUC = ', auc))+
+  theme(axis.line = element_line(colour = "black", size = 0.5, linetype = "dashed"),
+        axis.text.x = element_text(size=10, angle=45),
+        legend.position = 'top')
+```
+
+## Pregunta 3:
+
+### 3.1
+
+*Repetid el ejercicio 2 con otro conjunto de datos. Pueden ser datos reales de vuestro ámbito laboral o de algún repositorio de datos de Internet. Mirad por ejemplo: http://www.ics.uci.edu/~mlearn/MLSummary.html*
+
+Para el ejercicio nos hemos descargado el dataset *wine quality* de la página sugerida
+
+```{r wine-setup, echo=TRUE, warning=FALSE}
+#carga de los datos
+wine         <- read.csv2(paste0(datapath, 'winequality-red.csv'), sep=';', encoding = 'UTF-8')
+names(wine)  <- names(wine) %>% str_to_lower()
+wine %>% str
+```
+
+En este caso, el dataset no está tan depurado como el del titanic. La primera transformación que debemos hacer es convertir todas las variables que se han leído como factores.
+
+```{r wine-setup2, echo=TRUE, warning=FALSE}
+cols_dataset <- wine %>% select(-quality) %>% names(.)
+
+wine <-  wine %>% mutate_at(cols_dataset, .funs = function(x) x %>% as.character() %>% as.numeric() ) 
+
+```
+
+La variable que vamos a analizar en detalle es la variable *quality*
+
+```{r wine-exploracion0, echo=TRUE, warning=FALSE}
+wine %>% 
+  ggplot(data = .) +
+  aes(x=quality)+ 
+  geom_bar(color='black') + 
+  labs(x='calidad', y='número de vinos')+
+  ggtitle('Distribución de calidades de vino')+
+  theme(axis.line = element_line(colour = "black", size = 0.5, linetype = "dashed"),
+        legend.position = 'top')
+```
+
+Se observa que esta variable tiene 3 grandes bloques, uno inicial con pocos vinos con $quality <=4$; una intermedia con $4<=quality <=6$ donde se encuentra la gran mayoría; y una de vinos 'excelentes' de $quality>6$. Para este bloque de ejercicios vamos a intentar explorar qué cualidades separan un vino de la 'mayoría', tanto para bien, como para mal. Por ello, vamos a discretizar esta variable en estos 3 grandes grupos.
+
+```{r wine-setup3, echo=TRUE, warning=FALSE}
+wine <-  wine %>% mutate(target = if_else(quality <5, 'malo', if_else(quality <7, 'normal', 'bueno')) %>% factor(levels = c('malo', 'normal', 'bueno'))) 
+```
+Vamos a comenzar con un análisis exploratorio de las variables que contienen el dataset. Para ello, esta vez vamos a emplear la función *ggpairs* de la librería *GGally*. Esta función nos permite ver las distribuciones de las variables, las correlaciones entre ellas y una gráfica una a una de todas las variables.
+
+(Para una mejor visualización sacaremos las variables en dos plots)
+
+```{r wine-exploracion, echo=TRUE, warning=FALSE}
+library(GGally)
+
+ggpairs(wine[, c(0:6, 13)])
+
+```
+
+```{r wine-exploracion2, echo=TRUE, warning=FALSE}
+ggpairs(wine[, c(7:11, 13)])
+
+```
+
+Vemos que hay varias variables claramente correladas con la variable *quality*. Vamos a terminar de verificarlo con una gráfica de correlación:
+
+```{r wine-exploracion3, echo=TRUE, warning=FALSE}
+ggcorr(wine,high='#24CF4A', low='grey')+ 
+  ggtitle('Correlación entre variables vino')+
+  theme(axis.line = element_line(colour = "black", size = 0.5, linetype = "dashed"),
+        legend.position = 'top')
+
+```
+
+El alcohol y la acidez del vino aparecen como las variables más correladas.
+
+Vamos a entrenar un árbol de decisión que nos explique la calificación del vino:
+
+```{r preparacion_dataset_wine, echo=TRUE, warning=FALSE}
+#eliminamos la variable quality ya que ya no la usaremos más:
+wine <- wine %>% select(-quality)
+#convertimos el dataset en sparse matrix
+wine_m   <- wine %>% sparse.model.matrix(data=., target~.) %>% as.matrix()
+
+#generamos la división del dataset
+set.seed(123) # fijamos la semilla para la reproducibilidad de los experimentos.
+trainIndex   <- createDataPartition(wine$target, p=.8, times=1, list=FALSE)
+
+#train
+wineTrain    <- wine[trainIndex, ]
+X_train      <- wine_m[trainIndex,]
+y_train      <- wineTrain %>% pull(target)
+
+#test
+wineTest     <- wine[-trainIndex, ]
+X_test       <- wine_m[-trainIndex,]
+y_test       <- wineTest %>% pull(target)
+```
+
+```{r C50_wine, echo=TRUE, warning=FALSE}
+wine_c50fit <- C50::C5.0(y=y_train, x=X_train)
+```
+
+```{r C50_wine_tree, echo=TRUE, warning=FALSE}
+plot(wine_c50fit)
+```
+
+El árbol de este modelo es mucho menos interpretable debido a que las variables son contínuas y por tanto para cada rama, el modelo realiza varios cortes.
+
+Aún así, analizando los cortes del modelo, se puede extraer que la variable más representativa es el alcohol del vino y su acidez. Lo cual corresponde a lo que habíamos observado en las gráficas de correlación.
+
+Vamos a analizar la precisión del árbol (usando un entrenamiento de caret):
+
+```{r C50_caret_wine, echo=TRUE, warning=FALSE, include=TRUE}
+#preparacion para el entrenamiento de modelos
+ctrl <- trainControl(
+   method = 'repeatedcv'
+  ,number = 10
+  ,p = .7
+  ,repeats = 2
+  ,allowParallel = TRUE
+  ,verboseIter = FALSE
+  ,classProbs = TRUE
+)
+
+wine_c50trainfit <- 
+  suppressMessages( suppressWarnings( train(
+    data = wineTrain, target ~ .,
+    method = 'C5.0',
+    trControl = ctrl,
+    metric = 'Accuracy',
+    tuneGrid = expand.grid(trials = c(5, 10, 20, 50), model=c("tree"), winnow=c("FALSE")) ))
+  )
+preds <- predict(wine_c50trainfit, wineTest)
+
+confusionMatrix(table(preds, y_test))
+```
+
+Vemos que la precisión del modelo es alta, aunque el desbalanceo de clases es grande, y por ello la precisión balanceada resulta más baja.
+
+Una forma de mejorar el árbol tanto en explicatividad como en precisión puede ser aportarle información adicional, como por ejemplo, 'bloques' de variables contínuas, es decir, una discretización. Es importante resaltar que en ocasiones esto puede limitar la capacidad del algoritmo para abrir ramas y podar y, por tanto, disminuir la capacidad predictiva del árbol.
+
+```{r wine_discretizado, echo=TRUE, warning=FALSE}
+#eliminamos la variable quality ya que ya no la usaremos más:
+wine <- wine %>% mutate_if(is.numeric, .funs = arules::discretize, method = 'cluster', categories = 4)
+
+#convertimos el dataset en sparse matrix
+wine_m   <- wine %>% sparse.model.matrix(data=., target~.) %>% as.matrix()
+
+#generamos la división del dataset
+set.seed(123) # fijamos la semilla para la reproducibilidad de los experimentos.
+trainIndex   <- createDataPartition(wine$target, p=.8, times=1, list=FALSE)
+
+#train
+wineTrain    <- wine[trainIndex, ]
+X_train      <- wine_m[trainIndex,]
+y_train      <- wineTrain %>% pull(target)
+
+#test
+wineTest     <- wine[-trainIndex, ]
+X_test       <- wine_m[-trainIndex,]
+y_test       <- wineTest %>% pull(target)
+
+wine_disc_c50trainfit <- 
+  suppressMessages( suppressWarnings( train(
+    data = wineTrain, target ~ .,
+    method = 'C5.0',
+    trControl = ctrl,
+    metric = 'Accuracy',
+    tuneGrid = expand.grid(trials = c(5, 10, 20, 50), model=c("tree"), winnow=c("FALSE")) ))
+  )
+preds <- predict(wine_disc_c50trainfit, wineTest)
+
+confusionMatrix(table(preds, y_test))
+```
+
+Con dicho tratamiento hemos mejorado la precisión balanceada del modelo. Un análisis más exhaustivo de las variables, su correlación e interacción, permitiría obtener resultados más robustos y ajustados.
+
